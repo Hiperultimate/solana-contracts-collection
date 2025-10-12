@@ -11,10 +11,7 @@ describe("vault", () => {
   const program = anchor.workspace.vault as Program<Vault>;
   const provider = anchor.getProvider();
   const LAMPORTS_PER_SOL = anchor.web3.LAMPORTS_PER_SOL;
-  // const user = anchor.web3.Keypair.generate();
-  // There was a way where we get an account from Anchor itself that has a lot of Test SOL
-  // It was there so we dont have to create another keypair and airdrop sol to it
-  // Where could it be? 
+
   const user = provider.wallet.payer;
 
   it("Is initialized!", async () => {
