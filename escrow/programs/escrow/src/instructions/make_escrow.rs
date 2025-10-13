@@ -45,7 +45,8 @@ pub struct MakeEscrow<'info>{
     // add the unique seed for this escrow_details
     #[account(
         init,
-        seeds=[b"escrow", signer.key().as_ref(), seed.to_le_bytes().as_ref()],
+        // seeds=[b"escrow", signer.key().as_ref(), seed.to_le_bytes().as_ref()],   // Causes of all the issues
+        seeds=[b"escrow", signer.key().as_ref()],
         payer=signer,
         space=8+EscrowDetails::INIT_SPACE,
         bump

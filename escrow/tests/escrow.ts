@@ -2,13 +2,6 @@ import * as anchor from "@coral-xyz/anchor";
 import { Program } from "@coral-xyz/anchor";
 import { Escrow } from "../target/types/escrow";
 import {
-  createInitializeMintInstruction,
-  getMinimumBalanceForRentExemptMint,
-  MINT_SIZE,
-  TOKEN_PROGRAM_ID,
-  createAssociatedTokenAccountInstruction,
-  getAssociatedTokenAddress,
-  createMintToInstruction,
   createMint,
   TOKEN_2022_PROGRAM_ID,
   getMint,
@@ -16,6 +9,8 @@ import {
   Mint,
   createAssociatedTokenAccount,
 } from "@solana/spl-token";
+import { randomBytes } from "crypto";
+import { expect } from "chai";
 
 describe("escrow", () => {
   // Configure the client to use the local cluster.
@@ -32,6 +27,9 @@ describe("escrow", () => {
 
   let user_a_ata: anchor.web3.PublicKey;
   let user_b_ata: anchor.web3.PublicKey;
+
+  let escrowBytes = randomBytes(8);
+  let escrowSeedBuffer = new anchor.BN(escrowBytes, "le");
 
   before(async () => {
     await airdropUser(user_a.publicKey, 100, provider.connection);
@@ -74,7 +72,7 @@ describe("escrow", () => {
       mint_a_details.address,
       user_a_ata,
       tokenMaster.publicKey,
-      10 * 6 * 100,
+      (10 ** 6) * 100,
       undefined,
       { commitment: "confirmed" },
       TOKEN_2022_PROGRAM_ID
@@ -87,7 +85,7 @@ describe("escrow", () => {
       mint_b_details.address,
       user_b_ata,
       tokenMaster.publicKey,
-      10 * 6 * 100,
+      (10 ** 6) * 100,
       undefined,
       { commitment: "confirmed" },
       TOKEN_2022_PROGRAM_ID
@@ -104,12 +102,36 @@ describe("escrow", () => {
   });
 
   it("User creator creates a new escrow", async () => {
-    // const makeEscrowResponse = await program.methods
-    //   .makeEscrow()
-    //   .accounts()
-    //   .signers([user_a])
-    //   .rpc();
+    const tokenAAmount = new anchor.BN(50 * 10 ** 6);
+    const tokenBAmount = new anchor.BN(40 * 10 ** 6);
+    const makeEscrowResponse = await program.methods
+      .makeEscrow(tokenAAmount, tokenBAmount, escrowSeedBuffer)
+      .accountsPartial({
+        signer: user_a.publicKey,
+        tokenMintA: mint_a_details.address,
+        tokenMintB: mint_b_details.address,
+        tokenProgram: TOKEN_2022_PROGRAM_ID,
+      })
+      .signers([user_a])
+      .rpc();
+
+    console.log("Escrow made successfully : ", makeEscrowResponse);
+
+    // check details in escrow_details
+    // const seedBuffer = escrow_seed.toArrayLike(Buffer, "le", 8);
+    // const escrowSeeds = [Buffer.from("escrow"), user_a.publicKey.toBuffer(), seedBuffer]
+    const escrowSeeds = [Buffer.from("escrow"), user_a.publicKey.toBuffer()]
+    const [escrowAccount, _] = anchor.web3.PublicKey.findProgramAddressSync(escrowSeeds, program.programId);
+    const escrowDetails = await program.account.escrowDetails.fetch(escrowAccount)
+    console.log("Escrow account details :", escrowDetails);
+
+    expect(escrowDetails.tokenMintA.toBase58()).eq(mint_a_details.address.toBase58());
   });
+
+
+  it("Taker submits their share of the token to escrow", async () => {
+    
+  } )
 });
 
 async function airdropUser(
@@ -134,30 +156,6 @@ async function createSPLToken(
   decimals: number,
   amountToMint?: number
 ) {
-  // const mintKeypair = anchor.web3.Keypair.generate();
-  // const lamports = await getMinimumBalanceForRentExemptMint(connection);
-
-  // const createMintTransaction = new anchor.web3.Transaction().add(
-  //     anchor.web3.SystemProgram.createAccount({
-  //         fromPubkey: payer.publicKey,
-  //         newAccountPubkey: mintKeypair.publicKey,
-  //         space: MINT_SIZE,
-  //         lamports,
-  //         programId: TOKEN_PROGRAM_ID,
-  //     }),
-  //     createInitializeMintInstruction(
-  //         mintKeypair.publicKey,
-  //         decimals,
-  //         payer.publicKey, // Mint Authority
-  //         null,             // Freeze Authority (null for no freeze authority)
-  //         TOKEN_PROGRAM_ID
-  //     )
-  // );
-
-  // await anchor.web3.sendAndConfirmTransaction(connection, createMintTransaction, [payer, mintKeypair]);
-  // console.log("Mint Address:", mintKeypair.publicKey.toBase58());
-  // return mintKeypair.publicKey;
-
   const mint = await createMint(
     connection,
     payer,
