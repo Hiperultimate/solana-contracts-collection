@@ -1,87 +1,108 @@
 use anchor_spl::associated_token::AssociatedToken;
+use anchor_spl::token;
 use anchor_spl::token_2022::TransferChecked;
 use anchor_spl::token_interface::{self, Mint, TokenAccount, TokenInterface};
 use anchor_lang::prelude::*;
 
+use crate::program::Escrow;
 use crate::{EscrowDetails};
 
 #[derive(Accounts)]
 #[instruction( seed : u64 )]
 pub struct MakeEscrow<'info>{
     #[account(mut)]
-    pub signer : Signer<'info>, // The maker
-    
-    #[account(
-        init_if_needed,
-        associated_token::mint=token_mint_a,
-        associated_token::authority=signer,
-        associated_token::token_program=token_program,
-        payer=signer,
-    )]
-    pub maker_ata_a : InterfaceAccount<'info, TokenAccount>, // users account
-
-    #[account(
-        init_if_needed,
-        associated_token::mint=token_mint_b,
-        associated_token::authority=signer,
-        associated_token::token_program=token_program,
-        payer=signer,
-    )]
-    pub maker_ata_b : InterfaceAccount<'info, TokenAccount>,
-
-    // This should be a deterministic account
-    #[account(
-        init,
-        associated_token::mint=token_mint_a,
-        associated_token::authority=escrow_details,
-        associated_token::token_program=token_program,
-        payer=signer,
-    )]
-    pub vault_ata_a : InterfaceAccount<'info, TokenAccount>,
-
-    pub token_mint_a : InterfaceAccount<'info, Mint>,
-    pub token_mint_b : InterfaceAccount<'info, Mint>,
+    pub maker : Signer<'info>, // The maker
 
     // add the unique seed for this escrow_details
     #[account(
         init,
-        // seeds=[b"escrow", signer.key().as_ref(), seed.to_le_bytes().as_ref()],   // Causes of all the issues
-        seeds=[b"escrow", signer.key().as_ref()],
-        payer=signer,
+        // seeds=[b"escrow", maker.key().as_ref(), seed.to_le_bytes().as_ref()],   // Causes of all the issues
+        seeds=[b"escrow", maker.key().as_ref()],
+        payer=maker,
         space=8+EscrowDetails::INIT_SPACE,
         bump
     )]
-    pub escrow_details : Account<'info, EscrowDetails>,
+    pub escrow : Account<'info, EscrowDetails>,
+
+    #[account(
+        mint::token_program = token_program
+    )]
+    pub mint_a : InterfaceAccount<'info, Mint>,
+
+    #[account(
+        mint::token_program = token_program
+    )]
+    pub mint_b : InterfaceAccount<'info, Mint>,
+    
+    #[account(
+        init_if_needed,
+        associated_token::mint=mint_a,
+        associated_token::authority=maker,
+        associated_token::token_program=token_program,
+        payer=maker,
+    )]
+    pub maker_ata_a : InterfaceAccount<'info, TokenAccount>, // users account
+
+    // #[account(
+    //     init_if_needed,
+    //     associated_token::mint=mint_b,
+    //     associated_token::authority=maker,
+    //     associated_token::token_program=token_program,
+    //     payer=maker,
+    // )]
+    // pub maker_ata_b : InterfaceAccount<'info, TokenAccount>,
+
+    // This should be a deterministic account
+    #[account(
+        init,
+        associated_token::mint=mint_a,
+        associated_token::authority=escrow,
+        associated_token::token_program=token_program,
+        payer=maker,
+    )]
+    pub vault_ata_a : InterfaceAccount<'info, TokenAccount>,
 
     pub token_program: Interface<'info, TokenInterface>,
     pub associated_token_program: Program<'info, AssociatedToken>, // we probably shouldnt need this
     pub system_program : Program<'info, System>
 }
 
+impl<'info> MakeEscrow<'info> {
+    fn populate_escrow(&mut self, seed : u64, token_a_amount : u64, token_b_amount : u64, escrow_bump : u8) -> Result<()>{
+        self.escrow.set_inner(EscrowDetails { 
+            seed ,
+            maker_address: self.maker.key(),
+            mint_a: self.mint_a.key(),
+            mint_b: self.mint_b.key(),
+            token_a_amount,
+            token_b_amount,
+            escrow_bump 
+        });
+        Ok(())
+    }
+
+    fn deposit_tokens(&mut self, token_a_amount : u64 ) -> Result<()> {
+        let cpi_accounts = TransferChecked{
+            from : self.maker_ata_a.to_account_info(),
+            to: self.vault_ata_a.to_account_info(),
+            authority: self.maker.to_account_info(),
+            mint: self.mint_a.to_account_info(),
+        };
+
+        let cpi_context = CpiContext::new(
+            self.token_program.to_account_info(),
+            cpi_accounts
+        );
+
+        token_interface::transfer_checked(cpi_context, token_a_amount, self.mint_a.decimals)?;
+
+        Ok(())
+    }
+}
+
 pub fn handler(ctx : Context<MakeEscrow>, token_a_amount : u64, token_b_amount : u64, seed: u64) -> Result<()> {
-    let escrow_details = &mut ctx.accounts.escrow_details;
-    escrow_details.escrow_bump=ctx.bumps.escrow_details;
-    escrow_details.token_a_amount=token_a_amount;
-    escrow_details.token_b_amount=token_b_amount;
-    escrow_details.token_mint_a=ctx.accounts.token_mint_a.key();
-    escrow_details.token_mint_b=ctx.accounts.token_mint_b.key();
-    escrow_details.maker_address=ctx.accounts.signer.key();
-    escrow_details.taker_address=Pubkey::default(); // Giving it a default holder value
-
-    // Write transfer token logic from user ata to vault ata
-    let cpi_accounts = TransferChecked{
-        from : ctx.accounts.maker_ata_a.to_account_info(),
-        to: ctx.accounts.vault_ata_a.to_account_info(),
-        authority: ctx.accounts.signer.to_account_info(),
-        mint: ctx.accounts.token_mint_a.to_account_info(),
-    };
-
-    let cpi_context = CpiContext::new(
-        ctx.accounts.token_program.to_account_info(),
-        cpi_accounts
-    );
-
-    token_interface::transfer_checked(cpi_context, token_a_amount, ctx.accounts.token_mint_a.decimals)?;
+    ctx.accounts.populate_escrow(seed, token_a_amount, token_b_amount, ctx.bumps.escrow)?;
+    ctx.accounts.deposit_tokens(token_a_amount)?;
 
     Ok(())
 }

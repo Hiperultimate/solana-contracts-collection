@@ -52,18 +52,19 @@ pub struct TakeEscrow<'info> {
     pub maker_ata_b : InterfaceAccount<'info, TokenAccount>,
 
     #[account(
-        constraint=token_mint_a.key() == escrow_details.token_mint_a
+        constraint=token_mint_a.key() == escrow_details.mint_a
     )]
     pub token_mint_a : InterfaceAccount<'info, Mint>,
 
     #[account(
-        constraint=token_mint_b.key() == escrow_details.token_mint_b
+        constraint=token_mint_b.key() == escrow_details.mint_b
     )]
     pub token_mint_b : InterfaceAccount<'info, Mint>,
 
     #[account(
         mut,
-        seeds=[b"escrow", escrow_owner.key().as_ref(), seed.to_le_bytes().as_ref()],
+        // seeds=[b"escrow", escrow_owner.key().as_ref(), seed.to_le_bytes().as_ref()],
+        seeds=[b"escrow", escrow_owner.key().as_ref()],
         bump=escrow_details.escrow_bump
     )]
     pub escrow_details : Account<'info, EscrowDetails>,
