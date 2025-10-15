@@ -73,34 +73,39 @@ pub struct TakeEscrow<'info> {
     pub system_program : Program<'info, System>
 }
 
+impl<'info> TakeEscrow<'info>{
+    pub fn deposit_tokens(&mut self)-> Result<()> {
+        // Transfer token from taker_ata_b to maker_ata_b
+        let cpi_accounts = TransferChecked {
+            from: self.taker_ata_b.to_account_info(),
+            to: self.maker_ata_b.to_account_info(),
+            authority: self.taker.to_account_info(),
+            mint: self.token_mint_b.to_account_info(),
+        };
+
+        let cpi_context = CpiContext::new(self.token_program.to_account_info(), cpi_accounts);
+        token_interface::transfer_checked(cpi_context, self.escrow_details.token_b_amount, self.token_mint_b.decimals)
+    }
+
+    pub fn retrieve_tokens_from_vault(&mut self, seed : u64) -> Result<()> {
+        // Transfer token from vault_ata_a to taker_ata_a 
+        let cpi_accounts = TransferChecked {
+            from: self.vault_ata_a.to_account_info(),
+            to: self.taker_ata_a.to_account_info(),
+            authority: self.escrow_details.to_account_info(),
+            mint: self.token_mint_a.to_account_info(),
+        };
+
+        let escrow_owner_key = self.escrow_owner.key();
+        let seed_bytes = seed.to_le_bytes();
+        let signer_seeds: &[&[&[u8]]] = &[&[b"escrow", escrow_owner_key.as_ref(), seed_bytes.as_ref(), &[self.escrow_details.escrow_bump]]];
+
+        let cpi_context = CpiContext::new_with_signer(self.token_program.to_account_info(), cpi_accounts, signer_seeds);
+        token_interface::transfer_checked(cpi_context, self.escrow_details.token_a_amount, self.token_mint_a.decimals)
+    }
+}
+
 pub fn handler(ctx : Context<TakeEscrow>, seed : u64) -> Result<()> {
-    // Transfer token from taker_ata_b to maker_ata_b
-    let cpi_accounts = TransferChecked {
-        from: ctx.accounts.taker_ata_b.to_account_info(),
-        to: ctx.accounts.maker_ata_b.to_account_info(),
-        authority: ctx.accounts.taker.to_account_info(),
-        mint: ctx.accounts.token_mint_b.to_account_info(),
-    };
-
-    let cpi_context = CpiContext::new(ctx.accounts.token_program.to_account_info(), cpi_accounts);
-    token_interface::transfer_checked(cpi_context, ctx.accounts.escrow_details.token_b_amount, ctx.accounts.token_mint_b.decimals)?;
-
-
-    // Transfer token from vault_ata_a to taker_ata_a 
-    let cpi_accounts = TransferChecked {
-        from: ctx.accounts.vault_ata_a.to_account_info(),
-        to: ctx.accounts.taker_ata_a.to_account_info(),
-        authority: ctx.accounts.escrow_details.to_account_info(),
-        mint: ctx.accounts.token_mint_a.to_account_info(),
-    };
-
-    let escrow_owner_key = ctx.accounts.escrow_owner.key();
-    let seed_bytes = seed.to_le_bytes();
-    let signer_seeds: &[&[&[u8]]] = &[&[b"escrow", escrow_owner_key.as_ref(), seed_bytes.as_ref(), &[ctx.accounts.escrow_details.escrow_bump]]];
-
-    let cpi_context = CpiContext::new_with_signer(ctx.accounts.token_program.to_account_info(), cpi_accounts, signer_seeds);
-    token_interface::transfer_checked(cpi_context, ctx.accounts.escrow_details.token_a_amount, ctx.accounts.token_mint_a.decimals)?;
-
-
-    Ok(())
+    ctx.accounts.deposit_tokens()?;
+    ctx.accounts.retrieve_tokens_from_vault(seed)
 }
