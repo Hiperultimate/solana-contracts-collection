@@ -21,28 +21,30 @@ describe("escrow", () => {
   const program = anchor.workspace.escrow as Program<Escrow>;
   const provider = anchor.getProvider();
   const tokenMaster = provider.wallet;
-  const user_a = anchor.web3.Keypair.generate();
-  const user_b = anchor.web3.Keypair.generate();
+  const maker = anchor.web3.Keypair.generate();
+  const taker = anchor.web3.Keypair.generate();
 
   let mint_a_details: Mint;
   let mint_b_details: Mint;
 
-  let user_a_ata: anchor.web3.PublicKey;
-  let user_b_ata: anchor.web3.PublicKey;
+  let maker_ata: anchor.web3.PublicKey;
+  let taker_ata: anchor.web3.PublicKey;
   let vault_a_ata : anchor.web3.PublicKey;
+
+  const initialTokenAmount = new anchor.BN(100);
 
   // escrow details
   let escrowBytes = randomBytes(8);
   let escrowSeedBuffer = new anchor.BN(escrowBytes, "le");
-  const escrowBufferSeeds = [Buffer.from("escrow"), user_a.publicKey.toBuffer(), escrowSeedBuffer.toArrayLike(Buffer, "le", 8)];
+  const escrowBufferSeeds = [Buffer.from("escrow"), maker.publicKey.toBuffer(), escrowSeedBuffer.toArrayLike(Buffer, "le", 8)];
   const escrowDetailsPubKey = anchor.web3.PublicKey.findProgramAddressSync(
     escrowBufferSeeds,
     program.programId
   )[0];
 
   before(async () => {
-    await airdropUser(user_a.publicKey, 100, provider.connection);
-    await airdropUser(user_b.publicKey, 100, provider.connection);
+    await airdropUser(maker.publicKey, 100, provider.connection);
+    await airdropUser(taker.publicKey, 100, provider.connection);
     mint_a_details = await createSPLToken(
       provider.connection,
       tokenMaster.payer,
@@ -54,47 +56,47 @@ describe("escrow", () => {
       6
     );
 
-    // Create user_a ata
-    user_a_ata = await createAssociatedTokenAccount(
+    // Create maker ata
+    maker_ata = await createAssociatedTokenAccount(
       provider.connection,
-      user_a,
+      maker,
       mint_a_details.address,
-      user_a.publicKey,
+      maker.publicKey,
       { commitment: "confirmed" },
       TOKEN_2022_PROGRAM_ID
     );
 
-    // Create user_b ata
-    user_b_ata = await createAssociatedTokenAccount(
+    // Create taker ata
+    taker_ata = await createAssociatedTokenAccount(
       provider.connection,
-      user_b,
+      taker,
       mint_b_details.address,
-      user_b.publicKey,
+      taker.publicKey,
       { commitment: "confirmed" },
       TOKEN_2022_PROGRAM_ID
     );
 
-    // Transfer token_a to user_a
+    // Transfer token_a to maker
     const mintATx = await mintTo(
       provider.connection,
       tokenMaster.payer,
       mint_a_details.address,
-      user_a_ata,
+      maker_ata,
       tokenMaster.publicKey,
-      (10 ** 6) * 100,
+      (10 ** 6) * initialTokenAmount.toNumber(),
       undefined,
       { commitment: "confirmed" },
       TOKEN_2022_PROGRAM_ID
     );
 
-    // Transfer token_b to user_b
+    // Transfer token_b to taker
     const mintBTx = await mintTo(
       provider.connection,
       tokenMaster.payer,
       mint_b_details.address,
-      user_b_ata,
+      taker_ata,
       tokenMaster.publicKey,
-      (10 ** 6) * 100,
+      (10 ** 6) * initialTokenAmount.toNumber(),
       undefined,
       { commitment: "confirmed" },
       TOKEN_2022_PROGRAM_ID
@@ -102,8 +104,8 @@ describe("escrow", () => {
 
     vault_a_ata = getAssociatedTokenAddressSync(mint_a_details.address, escrowDetailsPubKey, true, TOKEN_2022_PROGRAM_ID);
 
-    console.log("Tokens minted successfully to user_a : ", mintATx);
-    console.log("Tokens minted successfully to user_b : ", mintBTx);
+    console.log("Tokens minted successfully to maker : ", mintATx);
+    console.log("Tokens minted successfully to taker : ", mintBTx);
   });
 
   it("Is initialized!", async () => {
@@ -118,12 +120,12 @@ describe("escrow", () => {
      const makeEscrowResponse = await program.methods
        .makeEscrow(tokenAAmount, tokenBAmount, escrowSeedBuffer)
        .accounts({
-         maker: user_a.publicKey,
+         maker: maker.publicKey,
          mintA: mint_a_details.address,
          mintB: mint_b_details.address,
          tokenProgram: TOKEN_2022_PROGRAM_ID,
        })
-      .signers([user_a])
+      .signers([maker])
       .rpc();
 
     console.log("Escrow made successfully : ", makeEscrowResponse);
@@ -136,23 +138,48 @@ describe("escrow", () => {
     const vaultAtaADetails = await getAccount(provider.connection, vault_a_ata, "confirmed", TOKEN_2022_PROGRAM_ID);
     expect(vaultAtaADetails.mint.toBase58()).eq(mint_a_details.address.toBase58());
     expect(new anchor.BN(vaultAtaADetails.amount).eq(tokenAAmount)).true;
+
+    // check if maker ATA balance has been reduced or not
+    const makerAtaADetails = await getAccount(provider.connection, maker_ata, "confirmed", TOKEN_2022_PROGRAM_ID);
+    const leftoverTokenAamount = new anchor.BN((10**6) * initialTokenAmount.toNumber()).sub(tokenAAmount);
+    expect(new anchor.BN(makerAtaADetails.amount).eq(leftoverTokenAamount)).true;
   });
 
 
-  it("Taker submits their share of the token to escrow", async () => {
-    // const takeEscrowTx = await program.methods
-    //   .takeEscrow(escrowSeedBuffer)
-    //   .accounts({
-    //     signer: user_b.publicKey,
-    //     escrowOwner: user_a.publicKey,
-    //     tokenMintA: mint_a_details.address,
-    //     tokenMintB: mint_b_details.address,
-    //     tokenProgram: TOKEN_2022_PROGRAM_ID
-    //   })
-    //   .signers([user_b])
-    //   .rpc()
+  it("Taker accepts the deal and submits their share of the token to escrow", async () => {
+    const takeEscrowTx = await program.methods
+      .takeEscrow(escrowSeedBuffer)
+      .accounts({
+        taker: taker.publicKey,
+        escrowOwner: maker.publicKey,
+        tokenMintA: mint_a_details.address,
+        tokenMintB: mint_b_details.address,
+        tokenProgram: TOKEN_2022_PROGRAM_ID
+      })
+      .signers([taker])
+      .rpc()
 
-    // console.log("Successfully traded tokens : ", takeEscrowTx);
+    console.log("Successfully traded tokens : ", takeEscrowTx);
+
+    await confirmTx(takeEscrowTx, provider.connection);
+
+    // Check both ATAs and see whether they have received the payment or not
+    const tokenAAmount = new anchor.BN(50 * (10 ** 6)); // taker should have this amount of token_a
+    const tokenBAmount = new anchor.BN(40 * (10 ** 6)); // maker should have this amount of token_b
+
+    // get ata_b for maker
+    const makerAtaBPubkey = getAssociatedTokenAddressSync(mint_b_details.address, maker.publicKey, false, TOKEN_2022_PROGRAM_ID);
+    const makerAtaBDetails = await getAccount(provider.connection, makerAtaBPubkey, "confirmed", TOKEN_2022_PROGRAM_ID);
+    
+    expect(makerAtaBDetails.mint.toBase58()).eq(mint_b_details.address.toBase58());
+    expect(new anchor.BN(makerAtaBDetails.amount).eq(tokenBAmount)).true;
+
+    // get ata_a for taker
+    const takerAtaAPubkey = getAssociatedTokenAddressSync(mint_a_details.address, taker.publicKey, false, TOKEN_2022_PROGRAM_ID);
+    const takerAtaADetails = await getAccount(provider.connection, takerAtaAPubkey, "confirmed", TOKEN_2022_PROGRAM_ID);
+    
+    expect(takerAtaADetails.mint.toBase58()).eq(mint_a_details.address.toBase58());
+    expect(new anchor.BN(takerAtaADetails.amount).eq(tokenAAmount)).true;
   } )
 });
 
@@ -209,4 +236,4 @@ const confirmTx = async (signature: string, connection : anchor.web3.Connection)
     ...block,
   });
   return signature;
-};
+};  

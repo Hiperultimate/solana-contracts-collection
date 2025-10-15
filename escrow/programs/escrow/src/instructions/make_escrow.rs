@@ -39,14 +39,14 @@ pub struct MakeEscrow<'info>{
     )]
     pub maker_ata_a : InterfaceAccount<'info, TokenAccount>, // users account
 
-    // #[account(
-    //     init_if_needed,
-    //     associated_token::mint=mint_b,
-    //     associated_token::authority=maker,
-    //     associated_token::token_program=token_program,
-    //     payer=maker,
-    // )]
-    // pub maker_ata_b : InterfaceAccount<'info, TokenAccount>,
+    #[account(
+        init_if_needed,
+        associated_token::mint=mint_b,
+        associated_token::authority=maker,
+        associated_token::token_program=token_program,
+        payer=maker,
+    )]
+    pub maker_ata_b : InterfaceAccount<'info, TokenAccount>,
 
     // This should be a deterministic account
     #[account(

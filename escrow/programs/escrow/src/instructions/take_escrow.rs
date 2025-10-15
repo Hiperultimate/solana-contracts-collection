@@ -9,7 +9,7 @@ pub struct TakeEscrow<'info> {
     #[account(
         mut,
     )]
-    pub signer : Signer<'info>,
+    pub taker : Signer<'info>,
 
     /// CHECK : as the name suggests, its escrow owner and we are just using it to check
     #[account(
@@ -20,18 +20,18 @@ pub struct TakeEscrow<'info> {
     #[account(
         init_if_needed,
         associated_token::mint=token_mint_b,
-        associated_token::authority=signer,
+        associated_token::authority=taker,
         associated_token::token_program=token_program,
-        payer=signer,
+        payer=taker,
     )]
     pub taker_ata_b : InterfaceAccount<'info, TokenAccount>,
 
     #[account(
         init_if_needed,
         associated_token::mint=token_mint_a,
-        associated_token::authority=signer,
+        associated_token::authority=taker,
         associated_token::token_program=token_program,
-        payer=signer,
+        payer=taker,
     )]
     pub taker_ata_a : InterfaceAccount<'info, TokenAccount>,
 
@@ -45,7 +45,7 @@ pub struct TakeEscrow<'info> {
 
     #[account(
         mut,
-        associated_token::mint=token_mint_a,
+        associated_token::mint=token_mint_b,
         associated_token::authority=escrow_owner,
         associated_token::token_program=token_program,
     )]
@@ -63,8 +63,7 @@ pub struct TakeEscrow<'info> {
 
     #[account(
         mut,
-        // seeds=[b"escrow", escrow_owner.key().as_ref(), seed.to_le_bytes().as_ref()],
-        seeds=[b"escrow", escrow_owner.key().as_ref()],
+        seeds=[b"escrow", escrow_owner.key().as_ref(), seed.to_le_bytes().as_ref()],
         bump=escrow_details.escrow_bump
     )]
     pub escrow_details : Account<'info, EscrowDetails>,
@@ -79,7 +78,7 @@ pub fn handler(ctx : Context<TakeEscrow>, seed : u64) -> Result<()> {
     let cpi_accounts = TransferChecked {
         from: ctx.accounts.taker_ata_b.to_account_info(),
         to: ctx.accounts.maker_ata_b.to_account_info(),
-        authority: ctx.accounts.signer.to_account_info(),
+        authority: ctx.accounts.taker.to_account_info(),
         mint: ctx.accounts.token_mint_b.to_account_info(),
     };
 
@@ -91,7 +90,7 @@ pub fn handler(ctx : Context<TakeEscrow>, seed : u64) -> Result<()> {
     let cpi_accounts = TransferChecked {
         from: ctx.accounts.vault_ata_a.to_account_info(),
         to: ctx.accounts.taker_ata_a.to_account_info(),
-        authority: ctx.accounts.escrow_details.to_account_info(),   // This is wrong
+        authority: ctx.accounts.escrow_details.to_account_info(),
         mint: ctx.accounts.token_mint_a.to_account_info(),
     };
 
@@ -100,7 +99,7 @@ pub fn handler(ctx : Context<TakeEscrow>, seed : u64) -> Result<()> {
     let signer_seeds: &[&[&[u8]]] = &[&[b"escrow", escrow_owner_key.as_ref(), seed_bytes.as_ref(), &[ctx.accounts.escrow_details.escrow_bump]]];
 
     let cpi_context = CpiContext::new_with_signer(ctx.accounts.token_program.to_account_info(), cpi_accounts, signer_seeds);
-    token_interface::transfer_checked(cpi_context, ctx.accounts.escrow_details.token_b_amount, ctx.accounts.token_mint_b.decimals)?;
+    token_interface::transfer_checked(cpi_context, ctx.accounts.escrow_details.token_a_amount, ctx.accounts.token_mint_a.decimals)?;
 
 
     Ok(())
