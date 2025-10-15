@@ -13,6 +13,7 @@ import {
 } from "@solana/spl-token";
 import { randomBytes } from "crypto";
 import { expect } from "chai";
+import assert from "assert";
 
 describe("escrow", () => {
   // Configure the client to use the local cluster.
@@ -181,6 +182,71 @@ describe("escrow", () => {
     expect(takerAtaADetails.mint.toBase58()).eq(mint_a_details.address.toBase58());
     expect(new anchor.BN(takerAtaADetails.amount).eq(tokenAAmount)).true;
   } )
+
+  it("Maker creates an escrow and the closes it without any takers" , async () => {
+    // get maker balance
+    const initialMakerBalance = await provider.connection.getBalance(maker.publicKey, "confirmed");
+
+    // Check user ata balance for token_a 
+    const initialMakerAtaBalance = await getAccount(provider.connection, maker_ata, "confirmed", TOKEN_2022_PROGRAM_ID);
+    console.log("Checking user ATA balance :", initialMakerAtaBalance);
+
+    const escrowBytes = randomBytes(8);
+    const escrowSeedBuffer = new anchor.BN(escrowBytes, "le");
+    const escrowBufferSeeds = [Buffer.from("escrow"), maker.publicKey.toBuffer(), escrowSeedBuffer.toArrayLike(Buffer, "le", 8)];
+    const escrowDetailsPubKey = anchor.web3.PublicKey.findProgramAddressSync(
+      escrowBufferSeeds,
+      program.programId
+    )[0];
+
+    const tokenAamt = new anchor.BN(20 * 10 ** 6);
+    const tokenBamt = new anchor.BN(30 * 10 ** 6);
+
+    const makeEscrowTx = await program.methods.makeEscrow(tokenAamt, tokenBamt, escrowSeedBuffer)
+      .accounts({
+        maker: maker.publicKey,
+        mintA: mint_a_details.address,
+        mintB: mint_b_details.address,
+        tokenProgram: TOKEN_2022_PROGRAM_ID
+      })
+      .signers([maker])
+      .rpc()
+
+    console.log("User created a new escrow : ", makeEscrowTx);
+
+    await confirmTx(makeEscrowTx, provider.connection);
+
+    // const makerBalanceAfterTx = await provider.connection.getBalance(maker.publicKey,"confirmed");
+    // console.log("Checking maker balance after tx : ", makerBalanceAfterTx);
+    
+    // const postMakerAtaBalance = await getAccount(provider.connection, maker_ata, "confirmed", TOKEN_2022_PROGRAM_ID);
+    // console.log("Checking user ATA balance :", postMakerAtaBalance);
+    
+    const closeEscrowTx = await program.methods.closeEscrow(escrowSeedBuffer)
+      .accounts({
+        maker: maker.publicKey,
+        mintA: mint_a_details.address,
+        tokenProgram: TOKEN_2022_PROGRAM_ID
+      })
+      .signers([maker])
+      .rpc()
+
+      console.log("Close escrow transaction completed : ", closeEscrowTx);
+      await confirmTx(closeEscrowTx, provider.connection);
+
+      
+      // check if escrow_details doesnt exist
+      try {
+        await getAccount(provider.connection, escrowDetailsPubKey, "confirmed", TOKEN_2022_PROGRAM_ID);
+        assert.fail("escrow details should have failed to fetch as it does not exist anymore but succeeded");
+      } catch (error) {
+        expect(error.name).eq("TokenAccountNotFoundError");
+      }
+
+      // check if lamports were returned by checking their balance with initial balance
+      const makerBalanceAfterCloseTx = await provider.connection.getBalance(maker.publicKey,"confirmed");
+      expect(initialMakerBalance).eq(makerBalanceAfterCloseTx);
+  })
 });
 
 async function airdropUser(

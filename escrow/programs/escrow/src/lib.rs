@@ -27,5 +27,9 @@ pub mod escrow {
         take_escrow::handler(ctx, seed)
     }
 
+    pub fn close_escrow(ctx : Context<CloseEscrow>, seed : u64) -> Result<()>{
+        close_escrow::handler(ctx, seed)
+    }
+
 
 }
