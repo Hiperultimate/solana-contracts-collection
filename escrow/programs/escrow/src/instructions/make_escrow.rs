@@ -1,23 +1,19 @@
 use anchor_spl::associated_token::AssociatedToken;
-use anchor_spl::token;
 use anchor_spl::token_2022::TransferChecked;
 use anchor_spl::token_interface::{self, Mint, TokenAccount, TokenInterface};
 use anchor_lang::prelude::*;
 
-use crate::program::Escrow;
 use crate::{EscrowDetails};
 
 #[derive(Accounts)]
-#[instruction( seed : u64 )]
+#[instruction( token_a_amount : u64, token_b_amount : u64, seed: u64 )]
 pub struct MakeEscrow<'info>{
     #[account(mut)]
     pub maker : Signer<'info>, // The maker
 
-    // add the unique seed for this escrow_details
     #[account(
         init,
-        // seeds=[b"escrow", maker.key().as_ref(), seed.to_le_bytes().as_ref()],   // Causes of all the issues
-        seeds=[b"escrow", maker.key().as_ref()],
+        seeds=[b"escrow", maker.key().as_ref(), seed.to_le_bytes().as_ref()],
         payer=maker,
         space=8+EscrowDetails::INIT_SPACE,
         bump

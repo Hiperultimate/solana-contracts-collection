@@ -12,6 +12,7 @@ import {
   getAccount,
 } from "@solana/spl-token";
 import { randomBytes } from "crypto";
+import { expect } from "chai";
 
 describe("escrow", () => {
   // Configure the client to use the local cluster.
@@ -31,12 +32,11 @@ describe("escrow", () => {
   let vault_a_ata : anchor.web3.PublicKey;
 
   // escrow details
-  // let escrowBytes = randomBytes(8);
-  // let escrowSeedBuffer = new anchor.BN(escrowBytes, "le");
-  let escrowSeed = new anchor.BN(randomBytes(8));
-  console.log("Checking escrow seed : ", Array.from(escrowSeed.toArrayLike(Buffer, "le", 8)));
-  const escrowDetails = anchor.web3.PublicKey.findProgramAddressSync(
-    [Buffer.from("escrow"), user_a.publicKey.toBuffer(), escrowSeed.toArrayLike(Buffer, "le", 8)],
+  let escrowBytes = randomBytes(8);
+  let escrowSeedBuffer = new anchor.BN(escrowBytes, "le");
+  const escrowBufferSeeds = [Buffer.from("escrow"), user_a.publicKey.toBuffer(), escrowSeedBuffer.toArrayLike(Buffer, "le", 8)];
+  const escrowDetailsPubKey = anchor.web3.PublicKey.findProgramAddressSync(
+    escrowBufferSeeds,
     program.programId
   )[0];
 
@@ -100,7 +100,7 @@ describe("escrow", () => {
       TOKEN_2022_PROGRAM_ID
     );
 
-    let vault_ata_a = getAssociatedTokenAddressSync(mint_a_details.address, escrowDetails, true);
+    vault_a_ata = getAssociatedTokenAddressSync(mint_a_details.address, escrowDetailsPubKey, true, TOKEN_2022_PROGRAM_ID);
 
     console.log("Tokens minted successfully to user_a : ", mintATx);
     console.log("Tokens minted successfully to user_b : ", mintBTx);
@@ -115,19 +115,14 @@ describe("escrow", () => {
   it("User creator creates a new escrow", async () => {
     const tokenAAmount = new anchor.BN(50 * 10 ** 6);
     const tokenBAmount = new anchor.BN(40 * 10 ** 6);
-    const makeEscrowResponse = await program.methods
-      .makeEscrow(tokenAAmount, tokenBAmount, escrowSeed)
-      .accounts({
-        maker: user_a.publicKey,
-        mintA: mint_a_details.address,
-        mintB: mint_b_details.address,
-        tokenProgram: TOKEN_2022_PROGRAM_ID
-        // tokenMintA: mint_a_details.address,
-        // tokenMintB: mint_b_details.address,
-        // tokenProgram: TOKEN_2022_PROGRAM_ID,
-        // associatedTokenProgram: anchor.utils.token.ASSOCIATED_PROGRAM_ID,
-        // systemProgram: anchor.web3.SystemProgram.programId
-      })
+     const makeEscrowResponse = await program.methods
+       .makeEscrow(tokenAAmount, tokenBAmount, escrowSeedBuffer)
+       .accounts({
+         maker: user_a.publicKey,
+         mintA: mint_a_details.address,
+         mintB: mint_b_details.address,
+         tokenProgram: TOKEN_2022_PROGRAM_ID,
+       })
       .signers([user_a])
       .rpc();
 
@@ -135,21 +130,12 @@ describe("escrow", () => {
 
     await confirmTx(makeEscrowResponse, provider.connection);
 
-    // check details in escrow_details
-    // const seedBuffer = escrow_seed.toArrayLike(Buffer, "le", 8);
-    // const escrowSeeds = [Buffer.from("escrow"), user_a.publicKey.toBuffer(), seedBuffer]
-    // const escrowSeeds = [Buffer.from("escrow"), user_a.publicKey.toBuffer()]
-    // const [escrowAccount, _] = anchor.web3.PublicKey.findProgramAddressSync(escrowSeeds, program.programId);
-    // const escrowDetails = await program.account.escrowDetails.fetch(escrowAccount)
-    // // console.log("Escrow account details :", escrowDetails);
-
-    // expect(escrowDetails.mintA.toBase58()).eq(mint_a_details.address.toBase58());
+    const escrowDetails = await program.account.escrowDetails.fetch(escrowDetailsPubKey)
+    expect(escrowDetails.mintA.toBase58()).eq(mint_a_details.address.toBase58());
   
-      
-    // // get escrowDetail.address mint_a ATA
-    // const vaultAtaAaccount = getAssociatedTokenAddressSync(mint_a_details.address, escrowAccount, true);
-    // const vaultAtaADetails = await getAccount(provider.connection, vaultAtaAaccount, "confirmed", TOKEN_2022_PROGRAM_ID);
-    // console.log("Vault details :", JSON.stringify(vaultAtaADetails));
+    const vaultAtaADetails = await getAccount(provider.connection, vault_a_ata, "confirmed", TOKEN_2022_PROGRAM_ID);
+    expect(vaultAtaADetails.mint.toBase58()).eq(mint_a_details.address.toBase58());
+    expect(new anchor.BN(vaultAtaADetails.amount).eq(tokenAAmount)).true;
   });
 
 

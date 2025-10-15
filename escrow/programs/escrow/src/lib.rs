@@ -20,12 +20,7 @@ pub mod escrow {
     }
 
     pub fn make_escrow(ctx : Context<MakeEscrow>, token_a_amount : u64, token_b_amount : u64, seed: u64) -> Result<()> {
-        msg!("Checking escrow seed 1: {:?}", seed.to_le_bytes());
-        msg!("Checking escrow seed :2 {:?}", seed.to_le_bytes());
-        msg!("Checking escrow seed : 3{:?}", seed.to_le_bytes());
-        msg!("Checking escrow seed : 4{:?}", seed.to_le_bytes());
-        // make_escrow::handler(ctx, token_a_amount, token_b_amount , seed)?;   
-        Ok(())
+        make_escrow::handler(ctx, token_a_amount, token_b_amount , seed)
     }
 
     pub fn take_escrow(ctx : Context<TakeEscrow>, seed: u64) -> Result<()> {
