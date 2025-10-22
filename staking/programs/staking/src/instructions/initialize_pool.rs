@@ -2,6 +2,7 @@ use anchor_lang::prelude::*;
 use anchor_spl::{associated_token::AssociatedToken, token_2022::{transfer_checked, TransferChecked}, token_interface::{Mint, TokenAccount, TokenInterface}};
 
 use crate::{AdminDetails, StakePool};
+use crate::error::ErrorCode;
 
 #[derive(Accounts)]
 pub struct InitializePool<'info>{
@@ -34,7 +35,7 @@ pub struct InitializePool<'info>{
 
     #[account(
         init,
-        seeds=[b"stake_pool", admin.key().as_ref(), token_mint.key().as_ref()],
+        seeds=[b"stake_pool", token_mint.key().as_ref()],
         space=8+StakePool::INIT_SPACE,
         payer=admin,
         bump
@@ -53,16 +54,18 @@ pub struct InitializePool<'info>{
 }
 
 impl<'info> InitializePool<'info>{
-    pub fn initialize(&mut self, reward_rate : u64) -> Result<()>{
+    pub fn initialize(&mut self, reward_rate : u64, stake_pool_bump : u8) -> Result<()>{
         self.stake_pool.total_pool = 0;
         self.stake_pool.reward_rate = reward_rate;
         self.stake_pool.reward_per_token = 0;
         self.stake_pool.last_updated = Clock::get()?.unix_timestamp;
+        self.stake_pool.bump = stake_pool_bump;
         Ok(())
     }
 
     pub fn transfer_to_treasury(&mut self, transfer_amount : u64) -> Result<()>{
         // transfer mint from admin_ata to treasury_ata ( no seed required )
+        require!(transfer_amount > self.admin_ata.amount || transfer_amount == 0, ErrorCode::InvalidTokenBalance);
         let accounts = TransferChecked {
             authority : self.admin.to_account_info(),
             from: self.admin_ata.to_account_info(),
@@ -77,8 +80,8 @@ impl<'info> InitializePool<'info>{
 }
 
 pub fn handler(ctx: Context<InitializePool>, reward_rate : u64, transfer_amount : u64 ) -> Result<()> {
-    ctx.accounts.initialize(reward_rate)?;
+    ctx.accounts.initialize(reward_rate, ctx.bumps.stake_pool)?;
     ctx.accounts.transfer_to_treasury(transfer_amount)?;
-    
+
     Ok(())
 }
