@@ -1,5 +1,3 @@
-use core::time;
-
 use anchor_lang::{prelude::*};
 use anchor_spl::{ token_2022::{transfer_checked, TransferChecked}, token_interface::{Mint, TokenAccount, TokenInterface}};
 
@@ -48,11 +46,18 @@ pub struct ClaimRewards<'info>{
 impl<'info> ClaimRewards<'info> {
     pub fn calculate_reward_and_update_state(&mut self) -> Result<u64> {
         let current_time = Clock::get()?.unix_timestamp;
-        let user_reward = self.stake_pool.reward_per_token * self.stake_details.staked_amount;
-        let total_reward = user_reward + self.stake_details.holding_rewards;
+        let elapsed_time = u64::try_from(current_time.checked_sub(self.stake_pool.last_updated).unwrap()).unwrap();
+
+        if self.stake_pool.total_pool > 0 {
+            self.stake_pool.reward_per_token += (elapsed_time * self.stake_pool.reward_rate) / self.stake_pool.total_pool;
+        }
+        self.stake_pool.last_updated = current_time;
+
+        let user_reward = (self.stake_pool.reward_per_token - self.stake_details.last_reward_per_token) * self.stake_details.staked_amount;
         self.stake_details.last_updated = current_time;
         self.stake_details.holding_rewards = 0;
-        Ok(total_reward)
+        self.stake_details.last_reward_per_token = self.stake_pool.reward_per_token;
+        Ok(user_reward)
     }
 
     pub fn transfer_reward(&mut self, reward : u64) -> Result<()>{
