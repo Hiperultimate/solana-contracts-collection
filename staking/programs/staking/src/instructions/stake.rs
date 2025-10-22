@@ -16,9 +16,9 @@ impl<'info> BaseStakeAccounts<'info> {
         Ok(())
     }
 
-    pub fn stake_funds(&mut self, amount_added : u64) -> Result<()>{
+    pub fn stake_funds(&mut self, added_amount : u64) -> Result<()>{
         // transfer from user_ata to treasury_ata
-        require!( amount_added > 0, ErrorCode::InvalidTokenBalance);
+        require!( added_amount > 0, ErrorCode::InvalidTokenBalance);
         let accounts = TransferChecked {
             authority : self.user.to_account_info(),
             from: self.user_ata.to_account_info(),
@@ -28,14 +28,14 @@ impl<'info> BaseStakeAccounts<'info> {
 
         let cpi_context = CpiContext::new(self.token_program.to_account_info(), accounts);
 
-        transfer_checked(cpi_context, amount_added, self.mint.decimals)
+        transfer_checked(cpi_context, added_amount, self.mint.decimals)
     }
 }
 
-pub fn handler(ctx: Context<BaseStakeAccounts>, added_amount : u64, amount_added : u64) -> Result<()> {
+pub fn handler(ctx: Context<BaseStakeAccounts>, added_amount : u64) -> Result<()> {
 
     ctx.accounts.add_stake(added_amount)?;
-    ctx.accounts.stake_funds(amount_added)?;
+    ctx.accounts.stake_funds(added_amount)?;
 
     Ok(())
 }

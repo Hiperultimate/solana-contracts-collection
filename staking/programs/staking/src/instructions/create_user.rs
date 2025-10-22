@@ -27,11 +27,11 @@ pub struct CreateUser<'info> {
     pub token_program : Interface<'info, TokenInterface>
 }
 
-pub fn handler(ctx:Context<CreateUser>, stake_details_bump : u8) -> Result<()>{
+pub fn handler(ctx:Context<CreateUser>) -> Result<()>{
     ctx.accounts.stake_details.staked_amount = 0;
     ctx.accounts.stake_details.holding_rewards = 0;
     ctx.accounts.stake_details.last_updated = Clock::get()?.unix_timestamp;
     ctx.accounts.stake_details.last_reward_per_token = 0;
-    ctx.accounts.stake_details.bump = stake_details_bump;
+    ctx.accounts.stake_details.bump = ctx.bumps.stake_details;
     Ok(())
 }
