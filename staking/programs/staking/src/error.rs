@@ -4,4 +4,7 @@ use anchor_lang::prelude::*;
 pub enum ErrorCode {
     #[msg("You do not have the balance to make the transaction")]
     InvalidTokenBalance,
+
+    #[msg("Invalid unstake initiated")]
+    InvalidUnstake,
 }

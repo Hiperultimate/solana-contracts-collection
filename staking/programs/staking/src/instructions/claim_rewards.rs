@@ -61,7 +61,8 @@ impl<'info> ClaimRewards<'info> {
     }
 
     pub fn transfer_reward(&mut self, reward : u64) -> Result<()>{
-        let signer_seeds: &[&[&[u8]]] = &[&[b"stake_pool", &[self.stake_pool.bump]]];
+        let mint_key = self.mint.key();
+        let signer_seeds: &[&[&[u8]]] = &[&[b"stake_pool", mint_key.as_ref() ,&[self.stake_pool.bump]]];
         let accounts = TransferChecked {
             mint: self.mint.to_account_info(),
             authority : self.stake_pool.to_account_info(),
